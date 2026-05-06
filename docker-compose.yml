@@ -1,0 +1,19 @@
+services:
+  web:
+    build: .
+    image: chatgpt-creator
+    container_name: chatgpt-creator
+    ports:
+      - "3000:3000"
+    env_file:
+      - web/.env.local
+    restart: unless-stopped
+    # Playwright/Chromium needs more shared memory than the 64M default.
+    shm_size: 1gb
+    # Better-Auth currently uses an in-memory store, so sessions reset on
+    # container restart. Mount a volume here once a SQLite adapter is wired up.
+    volumes:
+      - auth-data:/app/web/.auth-data
+
+volumes:
+  auth-data:

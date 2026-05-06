@@ -1,5 +1,9 @@
 import { randomUUID } from 'crypto';
+import path from 'path';
 import { createAccount } from '../../../src/lib/account-creator.js';
+
+const REPO_ROOT = path.resolve(process.cwd(), '..');
+const SCREENSHOTS_DIR = path.join(REPO_ROOT, 'screenshots', 'web-jobs');
 
 export type JobStatus = 'running' | 'done' | 'error';
 
@@ -12,9 +16,12 @@ export type Job = {
   endedAt: number | null;
   result: any;
   error: string | null;
+  errorScreenshot: string | null;
   ownerEmail: string;
   log: { at: number; step: string; info: any }[];
 };
+
+export const SCREENSHOT_DIR = SCREENSHOTS_DIR;
 
 const jobs = new Map<string, Job>();
 
@@ -43,17 +50,21 @@ export function startAccountJob(opts: {
     endedAt: null,
     result: null,
     error: null,
+    errorScreenshot: null,
     ownerEmail: opts.ownerEmail,
     log: [],
   };
   jobs.set(job.id, job);
 
+  const jobScreenshotDir = path.join(SCREENSHOTS_DIR, job.id);
+
   // Fire and forget; the in-memory job mutates as the flow advances.
   (async () => {
     try {
       const result = await createAccount({
-        headless: true,
+        headless: process.env.HEADLESS !== 'false',
         codexOAuthUrl: opts.codexOAuthUrl ?? null,
+        screenshotDir: jobScreenshotDir,
         onProgress: (step: string, info: any) => {
           job.step = step;
           job.log.push({ at: Date.now(), step, info });
@@ -65,6 +76,9 @@ export function startAccountJob(opts: {
     } catch (e: any) {
       job.status = 'error';
       job.error = e?.message || String(e);
+      if (e?.screenshotPath) {
+        job.errorScreenshot = path.basename(e.screenshotPath);
+      }
     } finally {
       job.endedAt = Date.now();
     }

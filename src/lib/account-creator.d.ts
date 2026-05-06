@@ -5,6 +5,7 @@ export interface CreateAccountOptions {
   headless?: boolean;
   codexOAuthUrl?: string | null;
   keepOpen?: boolean;
+  screenshotDir?: string | null;
 }
 
 export interface CreateAccountResult {

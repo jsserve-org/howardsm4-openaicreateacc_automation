@@ -1,8 +1,14 @@
 import { chromium } from 'playwright';
 import { faker } from '@faker-js/faker';
+import path from 'path';
+import fs from 'fs';
+import { fileURLToPath } from 'url';
 import { AIBrowserAgent } from '../utils/ai-agent.js';
 import { CloudflareEmailHandler } from '../utils/email-handler.js';
 import { generateEmail, delay, randomDelay } from '../utils/helpers.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const REPO_ROOT = path.resolve(path.dirname(__filename), '..', '..');
 
 // Reusable end-to-end ChatGPT account creation flow.
 //
@@ -35,6 +41,7 @@ export async function createAccount({
   headless = true,
   codexOAuthUrl = null,
   keepOpen = false,
+  screenshotDir = null,
 } = {}) {
   if (!process.env.OPENROUTER_API_KEY) {
     throw new Error('OPENROUTER_API_KEY not set');
@@ -45,8 +52,28 @@ export async function createAccount({
 
   emit(PROGRESS_STEPS.starting);
 
-  const browser = await chromium.launch({
+  // Using a persistent context (warm profile) is the difference between
+  // passing Cloudflare's Turnstile challenge and getting stuck on it.
+  const baseDir = path.isAbsolute(process.env.BROWSER_DATA_DIR || '')
+    ? process.env.BROWSER_DATA_DIR
+    : path.join(REPO_ROOT, process.env.BROWSER_DATA_DIR || 'browser-data');
+  // Fresh per-run profile dir — Cloudflare seems to flag profiles that have
+  // failed challenges recently, and reusing one gets us into a bad cookie
+  // state. We still use launchPersistentContext (vs. ephemeral newContext)
+  // because that's what consistently passes the initial Turnstile check.
+  const userDataDir = path.join(baseDir, `job-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
+  fs.mkdirSync(userDataDir, { recursive: true });
+
+  const context = await chromium.launchPersistentContext(userDataDir, {
     headless,
+    viewport: { width: 1280, height: 720 },
+    userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+    locale: 'en-US',
+    bypassCSP: true,
+    ignoreHTTPSErrors: true,
+    // Strip Playwright's default --enable-automation flag — it's a strong
+    // bot signal that Cloudflare's Turnstile checks for.
+    ignoreDefaultArgs: ['--enable-automation'],
     args: [
       '--disable-blink-features=AutomationControlled',
       '--no-first-run',
@@ -55,20 +82,28 @@ export async function createAccount({
     ],
   });
 
-  const context = await browser.newContext({
-    viewport: { width: 1280, height: 720 },
-    userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-    locale: 'en-US',
-    bypassCSP: true,
-    ignoreHTTPSErrors: true,
-  });
-
   const page = await context.newPage();
 
   await page.addInitScript(() => {
     Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
     window.chrome = { runtime: {} };
   });
+
+  // Capture a screenshot if anything throws, so the UI can show what the
+  // browser was actually looking at when the flow gave up.
+  let lastError = null;
+  let errorScreenshotPath = null;
+  const captureFailureScreenshot = async (label) => {
+    if (!screenshotDir) return null;
+    fs.mkdirSync(screenshotDir, { recursive: true });
+    const file = path.join(screenshotDir, `${label}-${Date.now()}.png`);
+    try {
+      await page.screenshot({ path: file, fullPage: true });
+      return file;
+    } catch {
+      return null;
+    }
+  };
 
   try {
     await page.goto('https://chat.openai.com/auth/login', { waitUntil: 'domcontentloaded', timeout: 30000 });
@@ -108,10 +143,18 @@ export async function createAccount({
 
     emit(PROGRESS_STEPS.done);
     return { email, session, codexCallbackUrl, finalUrl: page.url() };
+  } catch (e) {
+    lastError = e;
+    errorScreenshotPath = await captureFailureScreenshot('error');
+    e.screenshotPath = errorScreenshotPath;
+    throw e;
   } finally {
     if (!keepOpen) {
+      // launchPersistentContext owns the browser internally; closing the
+      // context shuts down the browser process too.
       await context.close().catch(() => {});
-      await browser.close().catch(() => {});
+      // Clean up the per-run profile.
+      fs.rm(userDataDir, { recursive: true, force: true }, () => {});
     }
   }
 }
@@ -188,12 +231,12 @@ async function fillAboutYou(page) {
   const nameLoc = page.getByLabel(/full\s*name|^name$/i).first();
   const ageLoc = page.getByLabel(/age/i).first();
 
-  await nameLoc.waitFor({ state: 'visible', timeout: 15000 });
-  await nameLoc.fill(fullName, { timeout: 10000 });
+  await nameLoc.waitFor({ state: 'visible', timeout: 30000 });
+  await nameLoc.fill(fullName, { timeout: 15000 });
   await randomDelay(300, 700);
 
-  await ageLoc.waitFor({ state: 'visible', timeout: 10000 });
-  await ageLoc.fill(String(age), { timeout: 10000 });
+  await ageLoc.waitFor({ state: 'visible', timeout: 20000 });
+  await ageLoc.fill(String(age), { timeout: 15000 });
   await randomDelay(300, 700);
 
   const finishBtn = page.getByRole('button', { name: /finish creating account|finish|continue/i }).first();

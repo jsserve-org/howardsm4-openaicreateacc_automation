@@ -100,6 +100,16 @@ function JobRow({ job }: { job: any }) {
             <>
               <h4 style={{ margin: '6px 0', color: '#ef4444' }}>Error</h4>
               <pre style={preStyle}>{job.error}</pre>
+              {job.errorScreenshot && (
+                <>
+                  <h4 style={{ margin: '6px 0' }}>Screenshot at failure</h4>
+                  <img
+                    src={`/api/screenshot/${job.id}/${job.errorScreenshot}`}
+                    alt="error"
+                    style={{ maxWidth: '100%', border: '1px solid #2a2a2e', borderRadius: 6 }}
+                  />
+                </>
+              )}
             </>
           )}
           <h4 style={{ margin: '6px 0' }}>Progress</h4>
