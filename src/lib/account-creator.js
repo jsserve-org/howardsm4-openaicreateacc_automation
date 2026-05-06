@@ -1,4 +1,4 @@
-import { chromium } from 'rebrowser-playwright';
+import { chromium } from 'playwright';
 import { faker } from '@faker-js/faker';
 import path from 'path';
 import fs from 'fs';
