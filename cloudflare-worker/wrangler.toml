@@ -11,3 +11,8 @@ FORWARD_EMAIL = "k33p@fastmail.es"
 [[kv_namespaces]]
 binding = "EMAIL_KV"
 id = "6ef9f6b1caf14d8dbe04c51e2435442d"
+
+[observability.logs]
+enabled = true
+invocation_logs = true
+persist = false

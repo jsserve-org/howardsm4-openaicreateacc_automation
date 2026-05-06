@@ -35,7 +35,7 @@ export class CloudflareEmailHandler {
   }
 
   async fetchCodeFromWorker(email) {
-    const response = await fetch(`${this.workerUrl}/get-code?email=${encodeURIComponent(email)}`, {
+    const response = await fetch(`${this.workerUrl}/get-code?email=${encodeURIComponent(email.toLowerCase())}`, {
       headers: {
         'Authorization': `Bearer ${this.apiToken}`,
         'Content-Type': 'application/json',
@@ -52,7 +52,7 @@ export class CloudflareEmailHandler {
   }
 
   async getEmails(email) {
-    const response = await fetch(`${this.workerUrl}/get-emails?email=${encodeURIComponent(email)}`, {
+    const response = await fetch(`${this.workerUrl}/get-emails?email=${encodeURIComponent(email.toLowerCase())}`, {
       headers: {
         'Authorization': `Bearer ${this.apiToken}`,
         'Content-Type': 'application/json',
@@ -73,7 +73,7 @@ export class CloudflareEmailHandler {
         'Authorization': `Bearer ${this.apiToken}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ email }),
+      body: JSON.stringify({ email: email.toLowerCase() }),
     });
 
     return response.ok;
@@ -90,7 +90,7 @@ export class CloudflareEmailHandler {
 
       try {
         const response = await fetch(
-          `https://api.cloudflare.com/client/v4/accounts/${this.accountId}/storage/kv/namespaces/${this.kvNamespaceId}/values/${encodeURIComponent(email)}`,
+          `https://api.cloudflare.com/client/v4/accounts/${this.accountId}/storage/kv/namespaces/${this.kvNamespaceId}/values/${encodeURIComponent(email.toLowerCase())}`,
           {
             headers: {
               'Authorization': `Bearer ${this.apiToken}`,
