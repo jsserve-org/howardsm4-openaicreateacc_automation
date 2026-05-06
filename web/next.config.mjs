@@ -10,7 +10,12 @@ const nextConfig = {
   experimental: {
     serverActions: { bodySizeLimit: '2mb' },
   },
-  serverExternalPackages: ['playwright', 'playwright-core', '@faker-js/faker'],
+  serverExternalPackages: [
+    'playwright',
+    'playwright-core',
+    'rebrowser-playwright',
+    '@faker-js/faker',
+  ],
   // Allow imports from the parent's src/ tree.
   outputFileTracingRoot: path.join(__dirname, '..'),
 };

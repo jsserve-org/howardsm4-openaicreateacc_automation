@@ -1,6 +1,7 @@
 import { randomUUID } from 'crypto';
 import path from 'path';
 import { createAccount } from '../../../src/lib/account-creator.js';
+import { registerRemote, unregisterRemote } from './remote';
 
 const REPO_ROOT = path.resolve(process.cwd(), '..');
 const SCREENSHOTS_DIR = path.join(REPO_ROOT, 'screenshots', 'web-jobs');
@@ -65,6 +66,7 @@ export function startAccountJob(opts: {
         headless: process.env.HEADLESS !== 'false',
         codexOAuthUrl: opts.codexOAuthUrl ?? null,
         screenshotDir: jobScreenshotDir,
+        onPageReady: (page: any) => registerRemote(job.id, page),
         onProgress: (step: string, info: any) => {
           job.step = step;
           job.log.push({ at: Date.now(), step, info });
@@ -81,6 +83,7 @@ export function startAccountJob(opts: {
       }
     } finally {
       job.endedAt = Date.now();
+      unregisterRemote(job.id);
     }
   })();
 

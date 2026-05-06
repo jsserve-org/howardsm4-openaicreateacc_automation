@@ -2,6 +2,7 @@ export type ProgressFn = (step: string, info: Record<string, any>) => void;
 
 export interface CreateAccountOptions {
   onProgress?: ProgressFn;
+  onPageReady?: (page: any) => void;
   headless?: boolean;
   codexOAuthUrl?: string | null;
   keepOpen?: boolean;

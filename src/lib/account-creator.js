@@ -1,4 +1,4 @@
-import { chromium } from 'playwright';
+import { chromium } from 'rebrowser-playwright';
 import { faker } from '@faker-js/faker';
 import path from 'path';
 import fs from 'fs';
@@ -26,6 +26,7 @@ const REPO_ROOT = path.resolve(path.dirname(__filename), '..', '..');
 const PROGRESS_STEPS = {
   starting: 'starting',
   signupAgent: 'agent_running_signup',
+  awaitingHuman: 'awaiting_human',
   awaitingOtp: 'awaiting_otp',
   fetchingOtp: 'fetching_otp',
   submittingOtp: 'submitting_otp',
@@ -36,8 +37,41 @@ const PROGRESS_STEPS = {
   done: 'done',
 };
 
+// Recognises Cloudflare Turnstile / "Just a moment…" interstitials.
+async function isOnTurnstile(page) {
+  try {
+    const url = page.url();
+    if (/^https?:\/\/[^/]*\/cdn-cgi\//.test(url)) return true;
+    const title = await page.title().catch(() => '');
+    if (/just a moment/i.test(title)) return true;
+    const has = await page.evaluate(() => {
+      if (document.querySelector('iframe[src*="challenges.cloudflare.com"]')) return true;
+      if (document.querySelector('[data-sitekey]')) return true;
+      const txt = document.body?.innerText || '';
+      return /verify you are human|just a moment/i.test(txt);
+    }).catch(() => false);
+    return !!has;
+  } catch {
+    return false;
+  }
+}
+
+// Pause the flow when Turnstile is up and yield to the human (remote-control
+// panel in the dashboard, or the visible browser window in dev mode).
+async function waitForHumanIfChallenge(page, emit, { timeout = 180000 } = {}) {
+  if (!(await isOnTurnstile(page))) return;
+  emit(PROGRESS_STEPS.awaitingHuman, { reason: 'cloudflare_turnstile' });
+  const deadline = Date.now() + timeout;
+  while (Date.now() < deadline) {
+    await delay(2000);
+    if (!(await isOnTurnstile(page))) return;
+  }
+  throw new Error('Cloudflare challenge not solved within timeout');
+}
+
 export async function createAccount({
   onProgress = () => {},
+  onPageReady = () => {},
   headless = true,
   codexOAuthUrl = null,
   keepOpen = false,
@@ -89,6 +123,10 @@ export async function createAccount({
     window.chrome = { runtime: {} };
   });
 
+  // Hand the live page to the caller so it can drive a remote-control panel
+  // (screencast + click forwarding) while the flow runs.
+  try { onPageReady(page); } catch {}
+
   // Capture a screenshot if anything throws, so the UI can show what the
   // browser was actually looking at when the flow gave up.
   let lastError = null;
@@ -109,9 +147,17 @@ export async function createAccount({
     await page.goto('https://chat.openai.com/auth/login', { waitUntil: 'domcontentloaded', timeout: 30000 });
     await page.waitForTimeout(3000);
 
+    // Cloudflare may show Turnstile before we even reach the form. Yield to
+    // the human (visible browser window in dev mode, or remote-control panel
+    // in the dashboard) until it clears.
+    await waitForHumanIfChallenge(page, emit);
+
     emit(PROGRESS_STEPS.signupAgent);
     const agent = new AIBrowserAgent(page, { maxSteps: 40 });
     await agent.run(buildSignupTask(email));
+
+    // Some flows show another challenge after submitting the email.
+    await waitForHumanIfChallenge(page, emit);
 
     emit(PROGRESS_STEPS.awaitingOtp);
     if (!(await detectVerificationInput(page))) {

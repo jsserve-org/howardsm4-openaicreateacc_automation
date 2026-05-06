@@ -2,6 +2,7 @@ import { initTRPC, TRPCError } from '@trpc/server';
 import { z } from 'zod';
 import { auth } from './auth';
 import { startAccountJob, listJobs, getJob } from './jobs';
+import { snapshot, click, pressKey, typeText } from './remote';
 
 export type Context = {
   userEmail: string | null;
@@ -28,6 +29,31 @@ export const appRouter = t.router({
         const j = getJob(input.id, ctx.userEmail);
         if (!j) throw new TRPCError({ code: 'NOT_FOUND' });
         return j;
+      }),
+    // Remote-control surface — only succeeds for jobs the caller owns.
+    viewport: protectedProcedure
+      .input(z.object({ id: z.string().uuid() }))
+      .query(async ({ ctx, input }) => {
+        if (!getJob(input.id, ctx.userEmail)) throw new TRPCError({ code: 'NOT_FOUND' });
+        return snapshot(input.id);
+      }),
+    click: protectedProcedure
+      .input(z.object({ id: z.string().uuid(), x: z.number(), y: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        if (!getJob(input.id, ctx.userEmail)) throw new TRPCError({ code: 'NOT_FOUND' });
+        return { ok: await click(input.id, input.x, input.y) };
+      }),
+    key: protectedProcedure
+      .input(z.object({ id: z.string().uuid(), key: z.string().min(1).max(20) }))
+      .mutation(async ({ ctx, input }) => {
+        if (!getJob(input.id, ctx.userEmail)) throw new TRPCError({ code: 'NOT_FOUND' });
+        return { ok: await pressKey(input.id, input.key) };
+      }),
+    type: protectedProcedure
+      .input(z.object({ id: z.string().uuid(), text: z.string().max(500) }))
+      .mutation(async ({ ctx, input }) => {
+        if (!getJob(input.id, ctx.userEmail)) throw new TRPCError({ code: 'NOT_FOUND' });
+        return { ok: await typeText(input.id, input.text) };
       }),
   }),
   accounts: t.router({

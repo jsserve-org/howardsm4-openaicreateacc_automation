@@ -3,7 +3,9 @@
   "version": "1.0.0",
   "description": "Playwright automation for ChatGPT account creation (testing purposes)",
   "type": "module",
-  "workspaces": ["web"],
+  "workspaces": [
+    "web"
+  ],
   "scripts": {
     "create-account": "node src/create-account.js",
     "ai-create-account": "node src/ai-create-account.js",
@@ -17,11 +19,16 @@
   "dependencies": {
     "@faker-js/faker": "^8.4.1",
     "dotenv": "^16.4.5",
-    "playwright": "^1.42.1"
+    "playwright": "^1.42.1",
+    "rebrowser-playwright": "^1.52.0"
   },
   "devDependencies": {
     "@playwright/test": "^1.42.1"
   },
-  "keywords": ["playwright", "automation", "testing"],
+  "keywords": [
+    "playwright",
+    "automation",
+    "testing"
+  ],
   "license": "MIT"
 }

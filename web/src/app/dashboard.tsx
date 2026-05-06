@@ -331,7 +331,9 @@ function ListHeaderRow() {
 /* ── ROW ──────────────────────────────────────────────────────────────── */
 
 function JobRow({ job, index }: { job: Job; index: number }) {
-  const [open, setOpen] = useState(false);
+  // Auto-open running jobs so the operator can see remote control without
+  // clicking; collapse-by-default for completed/errored.
+  const [open, setOpen] = useState(job.status === 'running');
   return (
     <div>
       <button
@@ -406,6 +408,7 @@ function JobDetail({ job }: { job: Job }) {
   return (
     <div className="grid lg:grid-cols-[1fr_minmax(280px,360px)] divide-y lg:divide-y-0 lg:divide-x divide-bg-hairline">
       <div className="p-6 space-y-6 min-w-0">
+        {job.status === 'running' && <RemoteControl jobId={job.id} step={job.step} />}
         {job.error && (
           <ErrorBlock error={job.error} screenshot={job.errorScreenshot} jobId={job.id} />
         )}
@@ -426,6 +429,112 @@ function JobDetail({ job }: { job: Job }) {
 
       <div className="p-6">
         <ProgressLog log={job.log} status={job.status} />
+      </div>
+    </div>
+  );
+}
+
+/* ── REMOTE CONTROL ───────────────────────────────────────────────────── */
+//
+// Live screenshot of the headless browser + click/key forwarding through
+// tRPC. Used to bypass interstitials like Cloudflare Turnstile that the
+// AI agent can't solve on its own.
+
+function RemoteControl({ jobId, step }: { jobId: string; step: string }) {
+  const viewport = trpc.jobs.viewport.useQuery(
+    { id: jobId },
+    { refetchInterval: 800, refetchIntervalInBackground: true },
+  );
+  const click = trpc.jobs.click.useMutation();
+  const key = trpc.jobs.key.useMutation();
+  const type = trpc.jobs.type.useMutation();
+  const [text, setText] = useState('');
+
+  const data = viewport.data as
+    | { png: string; url: string; width: number; height: number }
+    | null
+    | undefined;
+  const needsHuman = step === 'awaiting_human';
+
+  const onImgClick = (e: React.MouseEvent<HTMLImageElement>) => {
+    if (!data) return;
+    const rect = (e.target as HTMLImageElement).getBoundingClientRect();
+    const x = ((e.clientX - rect.left) / rect.width) * data.width;
+    const y = ((e.clientY - rect.top) / rect.height) * data.height;
+    click.mutate({ id: jobId, x, y });
+  };
+
+  const sendType = () => {
+    if (!text) return;
+    type.mutate({ id: jobId, text });
+    setText('');
+  };
+
+  return (
+    <div className={`relative border ${needsHuman ? 'border-accent-hazard/60' : 'border-bg-hairlineHi'} bg-bg-elev`}>
+      <div className="flex items-center justify-between px-3 py-2 border-b border-bg-hairline">
+        <div className="flex items-center gap-2">
+          <span className={`inline-block w-2 h-2 ${needsHuman ? 'text-accent-hazard' : 'text-accent-lime'}`}>
+            <span className="inline-block w-full h-full bg-current animate-ping opacity-60" />
+          </span>
+          <span className="text-[10px] tracking-[0.24em] uppercase text-ink-muted">
+            {needsHuman ? 'human assist requested' : 'remote control'}
+          </span>
+        </div>
+        <code className="text-[10px] text-ink-dim truncate max-w-[60%]">
+          {data?.url ?? 'connecting…'}
+        </code>
+      </div>
+
+      {needsHuman && (
+        <div className="px-3 py-2 text-[11px] text-accent-hazard bg-accent-hazard/[0.06] border-b border-bg-hairline">
+          Cloudflare challenge detected — click the &ldquo;Verify you are human&rdquo;
+          checkbox below. The flow resumes automatically once the page advances.
+        </div>
+      )}
+
+      <div className="bg-bg p-3">
+        {data ? (
+          <img
+            src={`data:image/png;base64,${data.png}`}
+            alt="remote viewport"
+            onClick={onImgClick}
+            className="w-full block cursor-crosshair select-none border border-bg-hairline"
+            draggable={false}
+          />
+        ) : (
+          <div className="aspect-video w-full grid place-items-center text-[10px] tracking-[0.24em] uppercase text-ink-dim border border-dashed border-bg-hairline">
+            attaching to browser…
+          </div>
+        )}
+
+        <div className="mt-3 flex flex-wrap items-center gap-2 text-[10px] tracking-[0.18em] uppercase">
+          <span className="text-ink-dim">keys</span>
+          {(['Enter', 'Tab', 'Backspace', 'Escape'] as const).map((k) => (
+            <button
+              key={k}
+              onClick={() => key.mutate({ id: jobId, key: k })}
+              className="btn btn-ghost !h-7 !px-2 !text-[10px]"
+            >
+              {k.toLowerCase()}
+            </button>
+          ))}
+          <input
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                sendType();
+              }
+            }}
+            placeholder="type into focused field…"
+            className="input !h-7 !text-[11px] flex-1 min-w-[120px]"
+          />
+          <button onClick={sendType} className="btn btn-ghost !h-7 !px-3 !text-[10px]">
+            send
+          </button>
+        </div>
       </div>
     </div>
   );
