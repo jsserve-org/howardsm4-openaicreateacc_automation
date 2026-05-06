@@ -1,0 +1,28 @@
+{
+  "name": "openaicreateacc_automation",
+  "version": "1.0.0",
+  "description": "Playwright automation for ChatGPT account creation (testing purposes)",
+  "type": "module",
+  "scripts": {
+    "create-account": "node src/create-account.js",
+    "ai-create-account": "node src/ai-create-account.js",
+    "create-batch": "node src/create-batch.js",
+    "test": "playwright test",
+    "test:headed": "playwright test --headed",
+    "test:debug": "playwright test --debug"
+  },
+  "dependencies": {
+    "@faker-js/faker": "^8.4.1",
+    "dotenv": "^16.4.5",
+    "playwright": "^1.42.1"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.42.1"
+  },
+  "keywords": [
+    "playwright",
+    "automation",
+    "testing"
+  ],
+  "license": "MIT"
+}

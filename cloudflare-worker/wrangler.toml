@@ -1,0 +1,13 @@
+name = "email-receiver"
+main = "worker.js"
+compatibility_date = "2024-01-01"
+account_id = "47dbfc06c7c6939bc4246b98b5433ed6"
+workers_dev = true
+
+[vars]
+API_TOKEN = "email-worker-secure-token-2026"
+FORWARD_EMAIL = "k33p@fastmail.es"
+
+[[kv_namespaces]]
+binding = "EMAIL_KV"
+id = "6ef9f6b1caf14d8dbe04c51e2435442d"
