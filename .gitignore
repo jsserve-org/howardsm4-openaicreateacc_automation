@@ -8,3 +8,10 @@ blob-report/
 *.log
 browser-data/
 .wrangler/tmp/
+
+# Web app
+web/.next/
+web/node_modules/
+web/.env.local
+web/.env
+next-env.d.ts

@@ -1,0 +1,9 @@
+node_modules
+web/node_modules
+web/.next
+browser-data
+screenshots
+test-results
+playwright-report
+.git
+*.log
