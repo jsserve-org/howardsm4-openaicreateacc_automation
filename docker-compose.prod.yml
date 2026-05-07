@@ -11,11 +11,22 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-acctcreator}
     volumes:
       - pg-data:/var/lib/postgresql/data
+    command: >
+      postgres
+      -c shared_buffers=64MB
+      -c effective_cache_size=128MB
+      -c work_mem=4MB
+      -c maintenance_work_mem=32MB
+      -c max_connections=20
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-acctcreator}"]
       interval: 5s
       timeout: 3s
       retries: 20
+    deploy:
+      resources:
+        limits:
+          memory: 200M
 
   web:
     image: ghcr.io/jsserve-org/howardsm4-openaicreateacc_automation:latest

@@ -4,6 +4,8 @@ import { auth } from './auth';
 import { startAccountJob, listJobs, getJob } from './jobs';
 import { snapshot, click, pressKey, typeText } from './remote';
 import { CloudflareEmailHandler } from '../../../src/utils/email-handler.js';
+import { listEmails } from './email-store';
+import { startMailPoller } from './mail-poller';
 
 export type Context = {
   userEmail: string | null;
@@ -61,6 +63,9 @@ export const appRouter = t.router({
     inbox: protectedProcedure
       .input(z.object({ id: z.string().uuid() }))
       .query(async ({ ctx, input }) => {
+        // Boot the poller on first inbox view if it isn't already running.
+        startMailPoller();
+
         const job = getJob(input.id, ctx.userEmail);
         if (!job) throw new TRPCError({ code: 'NOT_FOUND' });
         const email =
@@ -68,7 +73,24 @@ export const appRouter = t.router({
           job.log.find((l) => l.info?.email)?.info?.email ??
           null;
         if (!email) return { email: null, messages: [] as any[] };
+
+        // Prefer the local Postgres store; fall back to the legacy CF worker
+        // if no DB is configured.
         try {
+          if (process.env.DATABASE_URL) {
+            const rows = await listEmails(email);
+            return {
+              email,
+              messages: rows.map((m) => ({
+                to: m.to_addr,
+                from: m.from_addr,
+                subject: m.subject,
+                code: m.code,
+                body: m.raw,
+                receivedAt: m.received_at,
+              })),
+            };
+          }
           const messages = await new CloudflareEmailHandler().getEmails(email);
           return { email, messages };
         } catch (e: any) {

@@ -7,6 +7,14 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-acctcreator}
       POSTGRES_USER: ${POSTGRES_USER:-acctcreator}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-acctcreator}
+    # Tuned for a 1C/1G host — postgres defaults assume vastly more RAM.
+    command: >
+      postgres
+      -c shared_buffers=64MB
+      -c effective_cache_size=128MB
+      -c work_mem=4MB
+      -c maintenance_work_mem=32MB
+      -c max_connections=20
     ports:
       - "5432:5432"
     volumes:
@@ -16,6 +24,10 @@ services:
       interval: 5s
       timeout: 3s
       retries: 20
+    deploy:
+      resources:
+        limits:
+          memory: 200M
 
   web:
     build: .
