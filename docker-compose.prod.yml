@@ -1,3 +1,5 @@
+# Production compose — pulls the published image from GHCR rather than
+# building locally. Pair with `docker compose -f docker-compose.prod.yml up`.
 services:
   postgres:
     image: postgres:16-alpine
@@ -7,8 +9,6 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-acctcreator}
       POSTGRES_USER: ${POSTGRES_USER:-acctcreator}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-acctcreator}
-    ports:
-      - "5432:5432"
     volumes:
       - pg-data:/var/lib/postgresql/data
     healthcheck:
@@ -18,9 +18,9 @@ services:
       retries: 20
 
   web:
-    build: .
-    image: chatgpt-creator
+    image: ghcr.io/jsserve-org/howardsm4-openaicreateacc_automation:latest
     container_name: chatgpt-creator
+    pull_policy: always
     depends_on:
       postgres:
         condition: service_healthy
@@ -31,7 +31,6 @@ services:
     environment:
       DATABASE_URL: postgres://${POSTGRES_USER:-acctcreator}:${POSTGRES_PASSWORD:-acctcreator}@postgres:5432/${POSTGRES_DB:-acctcreator}
     restart: unless-stopped
-    # Playwright/Chromium needs more shared memory than the 64M default.
     shm_size: 1gb
     volumes:
       - auth-data:/app/web/.auth-data
