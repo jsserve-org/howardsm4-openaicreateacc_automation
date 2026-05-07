@@ -20,4 +20,9 @@ RUN npm run build
 WORKDIR /app
 ENV NODE_ENV=production
 EXPOSE 3000
-CMD ["npm", "--workspace", "web", "run", "start"]
+
+# The Playwright base image ships xvfb. Wrapping the start command in
+# `xvfb-run` provides a virtual X display so headful Chromium works inside
+# the container — needed when HEADLESS=false (Cloudflare bot detection is
+# noticeably looser against headed Chrome than headless).
+CMD ["xvfb-run", "--auto-servernum", "--server-args=-screen 0 1280x720x24", "npm", "--workspace", "web", "run", "start"]
