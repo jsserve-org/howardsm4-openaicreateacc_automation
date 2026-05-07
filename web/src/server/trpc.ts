@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { auth } from './auth';
 import { startAccountJob, listJobs, getJob } from './jobs';
 import { snapshot, click, pressKey, typeText } from './remote';
+import { CloudflareEmailHandler } from '../../../src/utils/email-handler.js';
 
 export type Context = {
   userEmail: string | null;
@@ -54,6 +55,25 @@ export const appRouter = t.router({
       .mutation(async ({ ctx, input }) => {
         if (!getJob(input.id, ctx.userEmail)) throw new TRPCError({ code: 'NOT_FOUND' });
         return { ok: await typeText(input.id, input.text) };
+      }),
+    // Forward the Cloudflare worker inbox for this job's burner email so
+    // the operator can see every received message + extracted code.
+    inbox: protectedProcedure
+      .input(z.object({ id: z.string().uuid() }))
+      .query(async ({ ctx, input }) => {
+        const job = getJob(input.id, ctx.userEmail);
+        if (!job) throw new TRPCError({ code: 'NOT_FOUND' });
+        const email =
+          (job.result as any)?.email ??
+          job.log.find((l) => l.info?.email)?.info?.email ??
+          null;
+        if (!email) return { email: null, messages: [] as any[] };
+        try {
+          const messages = await new CloudflareEmailHandler().getEmails(email);
+          return { email, messages };
+        } catch (e: any) {
+          return { email, messages: [], error: e?.message ?? String(e) };
+        }
       }),
   }),
   accounts: t.router({

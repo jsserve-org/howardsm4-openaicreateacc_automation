@@ -7,6 +7,18 @@ export default {
 
     const code = extractVerificationCode(rawBody);
 
+    // Log every incoming message so `wrangler tail` shows codes as they
+    // arrive — useful when debugging accounts that didn't auto-verify.
+    console.log(JSON.stringify({
+      kind: 'inbound_email',
+      to,
+      from,
+      subject,
+      code,
+      bytes: rawBody.length,
+      receivedAt: new Date().toISOString(),
+    }));
+
     const emailData = {
       to,
       from,
@@ -46,6 +58,7 @@ export default {
       if (!email) return new Response(JSON.stringify({ error: 'email param required' }), { status: 400 });
 
       const data = await env.EMAIL_KV.get(`code:${email}`, { type: 'json' });
+      console.log(JSON.stringify({ kind: 'get_code', email, hit: !!data, code: data?.code ?? null }));
       if (!data) return new Response(JSON.stringify({ code: null }), { status: 404 });
 
       return new Response(JSON.stringify(data), {

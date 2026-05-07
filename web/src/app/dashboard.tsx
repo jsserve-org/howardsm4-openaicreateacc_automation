@@ -425,11 +425,108 @@ function JobDetail({ job }: { job: Job }) {
         {job.result?.email && (
           <KeyValue k="account email" v={job.result.email} mono copyable />
         )}
+        <Inbox jobId={job.id} active={job.status === 'running'} />
       </div>
 
       <div className="p-6">
         <ProgressLog log={job.log} status={job.status} />
       </div>
+    </div>
+  );
+}
+
+/* ── INBOX (Cloudflare worker view of received emails) ──────────────── */
+
+function Inbox({ jobId, active }: { jobId: string; active: boolean }) {
+  const inbox = trpc.jobs.inbox.useQuery(
+    { id: jobId },
+    { refetchInterval: active ? 4000 : false },
+  );
+  const data = inbox.data as
+    | { email: string | null; messages: any[]; error?: string }
+    | undefined;
+
+  if (!data?.email) return null;
+  const messages = data.messages ?? [];
+
+  return (
+    <div className="border border-bg-hairline">
+      <div className="flex items-center justify-between px-3 py-2 border-b border-bg-hairline bg-bg-elev">
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] tracking-[0.24em] uppercase text-ink-dim">
+            inbox · cloudflare worker
+          </span>
+          <code className="text-[10px] text-ink-muted truncate">{data.email}</code>
+        </div>
+        <span className="text-[10px] tracking-[0.18em] uppercase text-ink-dim">
+          {messages.length} msg{messages.length === 1 ? '' : 's'}
+          {active && <span className="ml-2 text-accent-lime blink-dot align-middle" />}
+        </span>
+      </div>
+
+      {data.error && (
+        <div className="px-3 py-2 text-[11px] text-accent-danger bg-accent-danger/[0.04]">
+          {data.error}
+        </div>
+      )}
+
+      {messages.length === 0 ? (
+        <div className="px-3 py-4 text-[11px] text-ink-dim italic">
+          No mail yet. Worker will record incoming messages here as they arrive.
+        </div>
+      ) : (
+        <ul className="divide-y divide-bg-hairline">
+          {messages.map((m, i) => (
+            <InboxRow key={i} msg={m} />
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+function InboxRow({ msg }: { msg: any }) {
+  const [open, setOpen] = useState(false);
+  const time = msg.receivedAt ? new Date(msg.receivedAt).toLocaleTimeString('en-GB', { hour12: false }) : '—';
+  return (
+    <li>
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="w-full grid grid-cols-[5rem_1fr_auto] items-center gap-3 px-3 py-2 text-left text-[11px] hover:bg-bg-elev"
+      >
+        <code className="text-ink-dim">{time}</code>
+        <span className="text-ink truncate">
+          <span className="text-ink-muted">{msg.from}</span>
+          {msg.subject && <span className="ml-2">{msg.subject}</span>}
+        </span>
+        {msg.code && (
+          <span className="px-2 py-0.5 bg-accent-hazard/10 text-accent-hazard font-medium tracking-wider">
+            {msg.code}
+          </span>
+        )}
+      </button>
+      {open && (
+        <div className="px-3 pb-3 space-y-2 animate-fade-in">
+          <div className="grid grid-cols-2 gap-2 text-[10px] tracking-[0.18em] uppercase text-ink-dim">
+            <Field k="to" v={msg.to} />
+            <Field k="from" v={msg.from} />
+            <Field k="subject" v={msg.subject} />
+            <Field k="code" v={msg.code ?? '(none extracted)'} />
+          </div>
+          <pre className="p-2 bg-bg-panel border border-bg-hairline text-[10px] text-ink-muted overflow-auto max-h-64 whitespace-pre-wrap break-all scrollbar-hairline">
+            {msg.body}
+          </pre>
+        </div>
+      )}
+    </li>
+  );
+}
+
+function Field({ k, v }: { k: string; v: any }) {
+  return (
+    <div className="truncate">
+      <span className="text-ink-dim">{k}:</span>{' '}
+      <span className="text-ink-muted normal-case">{String(v ?? '')}</span>
     </div>
   );
 }
@@ -541,47 +638,130 @@ function RemoteControl({ jobId, step }: { jobId: string; step: string }) {
 }
 
 function ProgressLog({ log, status }: { log: Job['log']; status: string }) {
+  // Surface high-signal fields from `info` inline so the operator can see
+  // (and grab) the email / OTP code without opening anything else.
+  const captured = useMemo(() => {
+    let email: string | undefined;
+    let code: string | undefined;
+    for (const l of log) {
+      if (l.info?.email && !email) email = l.info.email;
+      if (l.info?.code && !code) code = l.info.code;
+    }
+    return { email, code };
+  }, [log]);
+
   return (
-    <div>
-      <div className="flex items-center justify-between mb-3">
-        <span className="text-[10px] tracking-[0.24em] uppercase text-ink-dim">
-          progress
-        </span>
-        <span className="text-[10px] tracking-[0.18em] uppercase text-ink-dim">
-          {log.length} step{log.length === 1 ? '' : 's'}
-        </span>
-      </div>
-      <ol className="space-y-1.5 text-[11px]">
-        {log.map((l, i) => {
-          const isLast = i === log.length - 1;
-          const dotColor =
-            status === 'error' && isLast ? 'text-accent-danger'
-              : status === 'done' && isLast ? 'text-accent-lime'
-                : isLast ? 'text-accent-hazard'
-                  : 'text-ink-dim';
-          return (
-            <li key={i} className="grid grid-cols-[5.5rem_1rem_1fr] gap-2 items-start">
-              <code className="text-ink-dim">
-                {new Date(l.at).toLocaleTimeString('en-GB', { hour12: false })}
-              </code>
-              <span className={`mt-1 inline-block w-1.5 h-1.5 ${dotColor}`}>
-                <span className="inline-block w-full h-full bg-current" />
+    <div className="space-y-4">
+      {(captured.email || captured.code) && (
+        <div className="border border-bg-hairline divide-y divide-bg-hairline text-[11px]">
+          {captured.email && (
+            <CapturedField label="email" value={captured.email} />
+          )}
+          {captured.code && (
+            <CapturedField label="otp code" value={captured.code} tone="hazard" />
+          )}
+        </div>
+      )}
+
+      <div>
+        <div className="flex items-center justify-between mb-3">
+          <span className="text-[10px] tracking-[0.24em] uppercase text-ink-dim">
+            event log
+          </span>
+          <span className="text-[10px] tracking-[0.18em] uppercase text-ink-dim">
+            {log.length} step{log.length === 1 ? '' : 's'}
+          </span>
+        </div>
+        <ol className="space-y-1.5 text-[11px]">
+          {log.map((l, i) => {
+            const isLast = i === log.length - 1;
+            const dotColor =
+              status === 'error' && isLast ? 'text-accent-danger'
+                : status === 'done' && isLast ? 'text-accent-lime'
+                  : isLast ? 'text-accent-hazard'
+                    : 'text-ink-dim';
+            return (
+              <li key={i} className="grid grid-cols-[5.5rem_1rem_1fr] gap-2 items-start">
+                <code className="text-ink-dim">
+                  {new Date(l.at).toLocaleTimeString('en-GB', { hour12: false })}
+                </code>
+                <span className={`mt-1 inline-block w-1.5 h-1.5 ${dotColor}`}>
+                  <span className="inline-block w-full h-full bg-current" />
+                </span>
+                <div className="min-w-0">
+                  <div className="text-ink truncate">{prettyStep(l.step)}</div>
+                  <InfoDetails info={l.info} />
+                </div>
+              </li>
+            );
+          })}
+          {status === 'running' && (
+            <li className="grid grid-cols-[5.5rem_1rem_1fr] gap-2 items-start text-ink-muted">
+              <code>—</code>
+              <span className="mt-1 inline-block w-1.5 h-1.5 text-accent-hazard">
+                <span className="inline-block w-full h-full bg-current animate-ping" />
               </span>
-              <span className="text-ink truncate">{prettyStep(l.step)}</span>
+              <span className="italic">awaiting next event…</span>
             </li>
-          );
-        })}
-        {status === 'running' && (
-          <li className="grid grid-cols-[5.5rem_1rem_1fr] gap-2 items-start text-ink-muted">
-            <code>—</code>
-            <span className="mt-1 inline-block w-1.5 h-1.5 text-accent-hazard">
-              <span className="inline-block w-full h-full bg-current animate-ping" />
-            </span>
-            <span className="italic">awaiting next event…</span>
-          </li>
-        )}
-      </ol>
+          )}
+        </ol>
+      </div>
     </div>
+  );
+}
+
+function CapturedField({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: string;
+  tone?: 'hazard';
+}) {
+  const [copied, setCopied] = useState(false);
+  const copy = async () => {
+    await navigator.clipboard.writeText(value);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1200);
+  };
+  const valueCls =
+    tone === 'hazard' ? 'text-accent-hazard font-medium' : 'text-ink';
+  return (
+    <div className="flex items-center justify-between gap-3 px-3 py-2">
+      <div className="flex items-baseline gap-3 min-w-0">
+        <span className="text-[10px] tracking-[0.24em] uppercase text-ink-dim shrink-0">
+          {label}
+        </span>
+        <code className={`truncate ${valueCls}`}>{value}</code>
+      </div>
+      <button
+        onClick={copy}
+        className="text-[10px] tracking-[0.18em] uppercase text-ink-muted hover:text-accent-lime shrink-0"
+      >
+        {copied ? 'copied' : 'copy'}
+      </button>
+    </div>
+  );
+}
+
+function InfoDetails({ info }: { info: any }) {
+  if (!info) return null;
+  // Skip noise: the per-step `email` repetition is shown in the captured
+  // fields above; we only highlight novel fields here.
+  const entries = Object.entries(info).filter(
+    ([k, v]) => v != null && v !== '' && k !== 'email',
+  );
+  if (entries.length === 0) return null;
+  return (
+    <ul className="mt-0.5 space-y-0.5 text-[10px] text-ink-muted">
+      {entries.map(([k, v]) => (
+        <li key={k} className="truncate">
+          <span className="text-ink-dim">{k}:</span>{' '}
+          <code className="text-ink-muted">{String(v)}</code>
+        </li>
+      ))}
+    </ul>
   );
 }
 
