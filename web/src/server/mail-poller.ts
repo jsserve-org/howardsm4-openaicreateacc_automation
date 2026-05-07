@@ -76,7 +76,13 @@ async function drainNew(client: ImapFlow, since: Date) {
     try {
       const raw = msg.source?.toString('utf8') ?? '';
       const parsed = await simpleParser(raw).catch(() => null as any);
-      const to = pickAddress(parsed?.to ?? msg.envelope?.to ?? null);
+      // Prefer Delivered-To / X-Forwarded-To / X-Original-To headers — when
+      // CF Email Routing forwards *@your-domain to a real mailbox (Gmail,
+      // Fastmail), the IMAP envelope `To` is the destination mailbox, not
+      // the burner address we actually care about.
+      const to =
+        forwardedRecipient(parsed) ??
+        pickAddress(parsed?.to ?? msg.envelope?.to ?? null);
       if (!to) continue;
       const from = pickAddress(parsed?.from ?? msg.envelope?.from ?? null);
       const subject = parsed?.subject ?? msg.envelope?.subject ?? null;
@@ -87,6 +93,25 @@ async function drainNew(client: ImapFlow, since: Date) {
       console.error('[mail-poller] parse/store error:', e?.message ?? e);
     }
   }
+}
+
+function forwardedRecipient(parsed: any): string | null {
+  if (!parsed?.headerLines) return null;
+  const keys = ['delivered-to', 'x-original-to', 'x-forwarded-to', 'envelope-to'];
+  for (const line of parsed.headerLines) {
+    if (!keys.includes(line.key)) continue;
+    const m = String(line.line).match(/[\w.+%-]+@[\w.-]+\.[A-Za-z]{2,}/);
+    if (m && !looksLikeForwardingMailbox(m[0])) return m[0];
+  }
+  return null;
+}
+
+// The mailbox we forward INTO will also appear in Delivered-To. Filter it
+// out so we land on the original burner address.
+function looksLikeForwardingMailbox(addr: string): boolean {
+  const our = (process.env.IMAP_USER || '').toLowerCase();
+  if (our && addr.toLowerCase() === our) return true;
+  return false;
 }
 
 function pickAddress(field: any): string | null {

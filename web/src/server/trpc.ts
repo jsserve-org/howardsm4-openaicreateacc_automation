@@ -1,7 +1,7 @@
 import { initTRPC, TRPCError } from '@trpc/server';
 import { z } from 'zod';
 import { auth } from './auth';
-import { startAccountJob, listJobs, getJob } from './jobs';
+import { startAccountJob, listJobs, getJob, cancelJob } from './jobs';
 import { snapshot, click, pressKey, typeText } from './remote';
 import { CloudflareEmailHandler } from '../../../src/utils/email-handler.js';
 import { listEmails } from './email-store';
@@ -28,34 +28,41 @@ export const appRouter = t.router({
     list: protectedProcedure.query(({ ctx }) => listJobs(ctx.userEmail)),
     get: protectedProcedure
       .input(z.object({ id: z.string().uuid() }))
-      .query(({ ctx, input }) => {
-        const j = getJob(input.id, ctx.userEmail);
+      .query(async ({ ctx, input }) => {
+        const j = await getJob(input.id, ctx.userEmail);
         if (!j) throw new TRPCError({ code: 'NOT_FOUND' });
         return j;
+      }),
+    cancel: protectedProcedure
+      .input(z.object({ id: z.string().uuid() }))
+      .mutation(async ({ ctx, input }) => {
+        const ok = await cancelJob(input.id, ctx.userEmail);
+        if (!ok) throw new TRPCError({ code: 'NOT_FOUND', message: 'Job not running' });
+        return { ok: true };
       }),
     // Remote-control surface — only succeeds for jobs the caller owns.
     viewport: protectedProcedure
       .input(z.object({ id: z.string().uuid() }))
       .query(async ({ ctx, input }) => {
-        if (!getJob(input.id, ctx.userEmail)) throw new TRPCError({ code: 'NOT_FOUND' });
+        if (!(await getJob(input.id, ctx.userEmail))) throw new TRPCError({ code: 'NOT_FOUND' });
         return snapshot(input.id);
       }),
     click: protectedProcedure
       .input(z.object({ id: z.string().uuid(), x: z.number(), y: z.number() }))
       .mutation(async ({ ctx, input }) => {
-        if (!getJob(input.id, ctx.userEmail)) throw new TRPCError({ code: 'NOT_FOUND' });
+        if (!(await getJob(input.id, ctx.userEmail))) throw new TRPCError({ code: 'NOT_FOUND' });
         return { ok: await click(input.id, input.x, input.y) };
       }),
     key: protectedProcedure
       .input(z.object({ id: z.string().uuid(), key: z.string().min(1).max(20) }))
       .mutation(async ({ ctx, input }) => {
-        if (!getJob(input.id, ctx.userEmail)) throw new TRPCError({ code: 'NOT_FOUND' });
+        if (!(await getJob(input.id, ctx.userEmail))) throw new TRPCError({ code: 'NOT_FOUND' });
         return { ok: await pressKey(input.id, input.key) };
       }),
     type: protectedProcedure
       .input(z.object({ id: z.string().uuid(), text: z.string().max(500) }))
       .mutation(async ({ ctx, input }) => {
-        if (!getJob(input.id, ctx.userEmail)) throw new TRPCError({ code: 'NOT_FOUND' });
+        if (!(await getJob(input.id, ctx.userEmail))) throw new TRPCError({ code: 'NOT_FOUND' });
         return { ok: await typeText(input.id, input.text) };
       }),
     // Forward the Cloudflare worker inbox for this job's burner email so
@@ -66,7 +73,7 @@ export const appRouter = t.router({
         // Boot the poller on first inbox view if it isn't already running.
         startMailPoller();
 
-        const job = getJob(input.id, ctx.userEmail);
+        const job = await getJob(input.id, ctx.userEmail);
         if (!job) throw new TRPCError({ code: 'NOT_FOUND' });
         const email =
           (job.result as any)?.email ??

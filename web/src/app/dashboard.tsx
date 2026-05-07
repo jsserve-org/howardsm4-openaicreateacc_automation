@@ -370,7 +370,8 @@ function StatusDot({ status }: { status: string }) {
   const color =
     status === 'done' ? 'text-accent-lime'
       : status === 'error' ? 'text-accent-danger'
-        : 'text-accent-hazard';
+        : status === 'cancelled' ? 'text-ink-muted'
+          : 'text-accent-hazard';
   return (
     <span className={`relative inline-block w-2 h-2 ${color}`}>
       <span className="absolute inset-0 bg-current" />
@@ -408,7 +409,12 @@ function JobDetail({ job }: { job: Job }) {
   return (
     <div className="grid lg:grid-cols-[1fr_minmax(280px,360px)] divide-y lg:divide-y-0 lg:divide-x divide-bg-hairline">
       <div className="p-6 space-y-6 min-w-0">
-        {job.status === 'running' && <RemoteControl jobId={job.id} step={job.step} />}
+        {job.status === 'running' && (
+          <>
+            <CancelBar jobId={job.id} />
+            <RemoteControl jobId={job.id} step={job.step} />
+          </>
+        )}
         {job.error && (
           <ErrorBlock error={job.error} screenshot={job.errorScreenshot} jobId={job.id} />
         )}
@@ -431,6 +437,29 @@ function JobDetail({ job }: { job: Job }) {
       <div className="p-6">
         <ProgressLog log={job.log} status={job.status} />
       </div>
+    </div>
+  );
+}
+
+/* ── CANCEL ───────────────────────────────────────────────────────────── */
+
+function CancelBar({ jobId }: { jobId: string }) {
+  const utils = trpc.useUtils();
+  const cancel = trpc.jobs.cancel.useMutation({
+    onSuccess: () => utils.jobs.list.invalidate(),
+  });
+  return (
+    <div className="flex items-center justify-between gap-3 border border-accent-danger/40 bg-accent-danger/[0.03] px-3 py-2">
+      <span className="text-[10px] tracking-[0.24em] uppercase text-accent-danger blink-dot">
+        live job
+      </span>
+      <button
+        onClick={() => cancel.mutate({ id: jobId })}
+        disabled={cancel.isPending}
+        className="btn btn-danger !h-7 !px-3 !text-[10px]"
+      >
+        {cancel.isPending ? 'cancelling…' : 'cancel job'}
+      </button>
     </div>
   );
 }

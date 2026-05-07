@@ -14,7 +14,7 @@ export async function GET(
   const email = session?.user?.email;
   if (!email) return new Response('Unauthorized', { status: 401 });
 
-  const job = getJob(jobId, email);
+  const job = await getJob(jobId, email);
   if (!job) return new Response('Not found', { status: 404 });
 
   // Strict allowlist: filename must match the job's recorded screenshot.
